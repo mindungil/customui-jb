@@ -22,10 +22,11 @@ from open_webui.utils.access_control import has_access
 
 
 from open_webui.config import (
+    BYPASS_ADMIN_ACCESS_CONTROL,
     DEFAULT_ARENA_MODEL,
 )
 
-from open_webui.env import SRC_LOG_LEVELS, GLOBAL_LOG_LEVEL
+from open_webui.env import BYPASS_MODEL_ACCESS_CONTROL, SRC_LOG_LEVELS, GLOBAL_LOG_LEVEL
 from open_webui.models.users import UserModel
 
 
@@ -76,8 +77,19 @@ async def get_all_base_models(request: Request, user: UserModel = None):
     return function_models + openai_models + ollama_models
 
 
-async def get_all_models(request, user: UserModel = None):
-    models = await get_all_base_models(request, user=user)
+async def get_all_models(request, refresh: bool = False, user: UserModel = None):
+    if (
+        request.app.state.MODELS
+        and request.app.state.BASE_MODELS
+        and (request.app.state.config.ENABLE_BASE_MODELS_CACHE and not refresh)
+    ):
+        base_models = request.app.state.BASE_MODELS
+    else:
+        base_models = await get_all_base_models(request, user=user)
+        request.app.state.BASE_MODELS = base_models
+
+    # deep copy the base models to avoid modifying the original list
+    models = [model.copy() for model in base_models]
 
     # If there are no models, return an empty list
     if len(models) == 0:
@@ -137,6 +149,7 @@ async def get_all_models(request, user: UserModel = None):
     custom_models = Models.get_all_models()
     for custom_model in custom_models:
         if custom_model.base_model_id is None:
+            # Applied directly to a base model
             for model in models:
                 if custom_model.id == model["id"] or (
                     model.get("owned_by") == "ollama"
@@ -320,3 +333,40 @@ def check_model_access(user, model):
             )
         ):
             raise Exception("Model not found")
+
+
+def get_filtered_models(models, user):
+    # Filter out models that the user does not have access to
+    if (
+        user.role == "user"
+        or (user.role == "admin" and not BYPASS_ADMIN_ACCESS_CONTROL)
+    ) and not BYPASS_MODEL_ACCESS_CONTROL:
+        filtered_models = []
+        for model in models:
+            if model.get("arena"):
+                if has_access(
+                    user.id,
+                    type="read",
+                    access_control=model.get("info", {})
+                    .get("meta", {})
+                    .get("access_control", {}),
+                ):
+                    filtered_models.append(model)
+                continue
+
+            model_info = Models.get_model_by_id(model["id"])
+            if model_info:
+                if (
+                    (user.role == "admin" and BYPASS_ADMIN_ACCESS_CONTROL)
+                    or user.id == model_info.user_id
+                    or has_access(
+                        user.id,
+                        type="read",
+                        access_control=model_info.access_control,
+                    )
+                ):
+                    filtered_models.append(model)
+
+        return filtered_models
+    else:
+        return models

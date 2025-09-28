@@ -1,31 +1,18 @@
 <script lang="ts">
-	import { DropdownMenu } from 'bits-ui';
-	import { createEventDispatcher } from 'svelte';
+	import { LinkPreview } from 'bits-ui';
+	import { getContext } from 'svelte';
 
-	import { flyAndScale } from '$lib/utils/transitions';
-	import { WEBUI_BASE_URL } from '$lib/constants';
-	import { activeUserIds } from '$lib/stores';
-
-	export let side = 'right';
-	export let align = 'top';
+	const i18n = getContext('i18n');
+	import UserStatus from './UserStatus.svelte';
+	import UserStatusLinkPreview from './UserStatusLinkPreview.svelte';
 
 	export let user = null;
-	let show = false;
-
-	const dispatch = createEventDispatcher();
 </script>
 
-<DropdownMenu.Root
-	bind:open={show}
-	closeFocus={false}
-	onOpenChange={(state) => {
-		dispatch('change', state);
-	}}
-	typeahead={false}
->
-	<DropdownMenu.Trigger>
+<LinkPreview.Root openDelay={0} closeDelay={0}>
+	<LinkPreview.Trigger class=" cursor-pointer no-underline! font-normal! ">
 		<slot />
-	</DropdownMenu.Trigger>
+	</LinkPreview.Trigger>
 
 	<slot name="content">
 		<DropdownMenu.Content
